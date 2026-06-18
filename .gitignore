@@ -7,3 +7,6 @@ __pycache__/
 venv/
 .DS_Store
 .streamlit/secrets.toml
+
+# Personal prep — keep local, do not publish
+LOOM_SCRIPT.md

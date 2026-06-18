@@ -25,6 +25,10 @@ review-ready PR with passing tests — observable end-to-end by an engineering l
 
 ## Architecture
 
+![Architecture](docs/architecture.png)
+
+<details><summary>ASCII version</summary>
+
 ```
    EVENT SOURCE                 ORCHESTRATOR (brain)              OBSERVABILITY
  ┌───────────────┐          ┌───────────────────────┐         ┌──────────────┐
@@ -40,6 +44,8 @@ review-ready PR with passing tests — observable end-to-end by an engineering l
         └───────────────────┤  -> persist (SQLite)  │                  of record)
           PR link back      └───────────────────────┘
 ```
+
+</details>
 
 ### Key design decisions (the "How")
 1. **Devin as a fleet, not a call.** One session per issue, dispatched in
@@ -94,12 +100,34 @@ make dashboard              # dashboard in another
 
 | Challenge requirement | Where |
 |---|---|
-| **Triggered by an event** | `scripts/scan_and_file.py` (scan → issues). Webhook path documented under *Extending*. |
+| **Triggered by an event** | Real-time: `src/webhook.py` (GitHub `issues` webhook → instant dispatch). Batch: `scripts/scan_and_file.py` (scan → issues). |
 | **Programmatically manage Devin sessions** | `src/devin_client.py` + `src/orchestrator.py` (create, poll, comment, steer) |
 | **Observable outputs** | GitHub PRs + issue comments; Streamlit dashboard (`dashboard/app.py`) |
 | **Observability / analytics** | KPIs: throughput, success rate, MTTR, ACU spend, status & finding-type breakdown |
 | **Dockerised** | `Dockerfile` + `docker-compose.yml` (orchestrator + dashboard, shared volume) |
 | **Forked Superset + issues** | `make scan` files them; fixtures in `fixtures/findings.json` |
+
+---
+
+## Real-time trigger (GitHub webhook)
+
+The scheduled scan is the *batch* event source; `src/webhook.py` is the
+*real-time* one. A GitHub `issues` webhook (opened / labeled / reopened) fires an
+**instant** Devin dispatch — no waiting for the next scan or poll. Both paths
+funnel into the same `Orchestrator.dispatch_one()`.
+
+```bash
+make webhook                     # runs FastAPI on :8000  (docker compose runs it too)
+ngrok http 8000                  # expose it for GitHub (dev)
+```
+Then in your fork: **Settings → Webhooks → Add webhook**
+- Payload URL: `https://<your-ngrok>/webhook/github`
+- Content type: `application/json`
+- Secret: same value as `GITHUB_WEBHOOK_SECRET` in `.env`
+- Events: **Issues**
+
+Now labeling any issue `devin-fix` dispatches Devin within seconds. Payloads are
+authenticated via HMAC-SHA256 when the secret is set. Health check: `GET /health`.
 
 ---
 
@@ -123,18 +151,20 @@ src/devin_client.py    Devin v1 API wrapper (+ simulate hook)
 src/github_client.py   GitHub issues/comments/labels (+ fixture fallback)
 src/prompts.py         Scoped prompt + structured-output JSON Schema
 src/orchestrator.py    dispatch / reconcile / loop  (the brain)
+src/webhook.py         FastAPI receiver: real-time GitHub issue trigger
 src/store.py           SQLite system-of-record
 src/simulator.py       Deterministic offline Devin
-scripts/scan_and_file.py   Event source: Bandit/pip-audit -> GitHub issues
+scripts/scan_and_file.py   Batch event source: Bandit/pip-audit -> GitHub issues
 dashboard/app.py       Streamlit observability dashboard
 fixtures/findings.json Sample findings (offline + fallback)
+docs/architecture.png  Architecture diagram
 ```
 
 ---
 
 ## Extending in a real customer engagement (the "When")
-- **Webhook trigger**: replace polling with a GitHub `issues`/`push` webhook (or
-  ServiceNow/Jira/CodeQL/Snyk) hitting a small FastAPI receiver → same dispatch path.
+- **More event sources**: the GitHub webhook is built (`src/webhook.py`); the same
+  receiver pattern extends to ServiceNow / Jira / CodeQL / Snyk scan-complete events.
 - **Severity routing**: auto-merge low-risk fixes that pass CI above a confidence
   threshold; escalate the rest to a named reviewer.
 - **CI gating**: block the comment-back until the PR's checks go green.

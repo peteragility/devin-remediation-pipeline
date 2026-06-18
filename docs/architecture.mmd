@@ -1,0 +1,43 @@
+---
+title: Autonomous Remediation Pipeline (Devin API)
+---
+flowchart LR
+    subgraph SOURCES["EVENT SOURCES"]
+        direction TB
+        S1["GitHub Webhook<br/>(issue opened / labeled)"]
+        S2["Scheduled Scan:<br/>Bandit + pip-audit"]
+    end
+
+    subgraph ORCH["ORCHESTRATOR — the brain"]
+        direction TB
+        O1["dispatch()<br/>POST /v1/sessions<br/>(idempotent · ACU-capped<br/>structured-output schema)"]
+        O2["reconcile()<br/>GET /v1/sessions/{id}<br/>(poll status · PR<br/>structured_output)"]
+    end
+
+    subgraph DEVIN["DEVIN"]
+        direction TB
+        D1["Devin API —<br/>N parallel sessions"]
+        D2["Each session: edits<br/>Apache Superset,<br/>runs tests, opens a PR"]
+        D1 --> D2
+    end
+
+    subgraph OUTPUTS["OUTPUTS"]
+        direction TB
+        P1["GitHub fork:<br/>Pull Requests +<br/>issue comments"]
+        P2["Human reviews & merges<br/>(Devin never self-merges)"]
+        P1 --> P2
+    end
+
+    subgraph OBS["OBSERVABILITY"]
+        direction TB
+        DB["SQLite —<br/>system of record"]
+        DASH["Streamlit Dashboard:<br/>throughput · success rate<br/>MTTR · ACU spend"]
+        DB --> DASH
+    end
+
+    S1 & S2 -->|"new issue<br/>(label: devin-fix)"| O1
+    O1 -->|"1 session per issue"| D1
+    D2 -->|"review-ready PR"| P1
+    O2 -->|"comment PR link<br/>on issue"| P1
+    O1 --> DB
+    O2 --> DB

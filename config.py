@@ -19,6 +19,9 @@ DEVIN_SIMULATE = _bool("DEVIN_SIMULATE")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 TARGET_LABEL = os.getenv("TARGET_LABEL", "devin-fix")
+# Shared secret for verifying GitHub webhook payloads (HMAC-SHA256). Optional in
+# dev; strongly recommended in any shared/exposed deployment.
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
 # Orchestrator
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "20"))

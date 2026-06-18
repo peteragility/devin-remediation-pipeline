@@ -21,6 +21,9 @@ once:           ## one dispatch + reconcile pass
 loop:           ## run the orchestrator continuously
 	python -m src.orchestrator loop
 
+webhook:        ## run the FastAPI webhook receiver (real-time trigger)
+	uvicorn src.webhook:app --host 0.0.0.0 --port 8000 --reload
+
 dashboard:      ## launch the Streamlit dashboard locally
 	streamlit run dashboard/app.py
 

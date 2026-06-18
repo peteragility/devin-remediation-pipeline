@@ -33,36 +33,41 @@ class Orchestrator:
         store.init()
 
     # ── event -> Devin session ──────────────────────────────────────────────────
+    def dispatch_one(self, issue: dict) -> bool:
+        """Dispatch a single issue to a Devin session. Idempotent and
+        concurrency-capped. Returns True iff a new session was created.
+
+        Used by both the scheduled scan path (dispatch) and the real-time
+        GitHub webhook receiver (src/webhook.py)."""
+        num = issue["number"]
+        if store.has_run(num):
+            return False  # idempotency: never double-dispatch
+        if store.active_count() >= config.MAX_CONCURRENCY:
+            log.info("Concurrency cap (%d) reached; deferring #%s.", config.MAX_CONCURRENCY, num)
+            return False
+        try:
+            session = self.devin.create_session(
+                prompts.build_prompt(issue, config.GITHUB_REPO),
+                structured_output_schema=prompts.STRUCTURED_OUTPUT_SCHEMA,
+                tags=prompts.session_tags(issue),
+                title=prompts.session_title(issue),
+            )
+            store.insert_dispatch(issue, session, _finding_type(issue))
+            log.info(
+                "Dispatched #%s -> %s (%s)",
+                num,
+                session.get("session_id"),
+                session.get("url"),
+            )
+            return True
+        except Exception as e:  # noqa: BLE001 - surface, keep going
+            log.exception("Failed to dispatch #%s: %s", num, e)
+            return False
+
     def dispatch(self) -> int:
         issues = self.gh.list_open_issues(config.TARGET_LABEL)
         log.info("Found %d open issue(s) labelled '%s'", len(issues), config.TARGET_LABEL)
-        dispatched = 0
-        for issue in issues:
-            num = issue["number"]
-            if store.has_run(num):
-                continue  # idempotency: never double-dispatch
-            if store.active_count() >= config.MAX_CONCURRENCY:
-                log.info("Concurrency cap (%d) reached; deferring.", config.MAX_CONCURRENCY)
-                break
-            try:
-                session = self.devin.create_session(
-                    prompts.build_prompt(issue, config.GITHUB_REPO),
-                    structured_output_schema=prompts.STRUCTURED_OUTPUT_SCHEMA,
-                    tags=prompts.session_tags(issue),
-                    title=prompts.session_title(issue),
-                )
-                ftype = _finding_type(issue)
-                store.insert_dispatch(issue, session, ftype)
-                dispatched += 1
-                log.info(
-                    "Dispatched #%s -> %s (%s)",
-                    num,
-                    session.get("session_id"),
-                    session.get("url"),
-                )
-            except Exception as e:  # noqa: BLE001 - surface, keep going
-                log.exception("Failed to dispatch #%s: %s", num, e)
-        return dispatched
+        return sum(1 for issue in issues if self.dispatch_one(issue))
 
     # ── Devin session -> outcome ────────────────────────────────────────────────
     def reconcile(self) -> int:
