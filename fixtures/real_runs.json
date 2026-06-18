@@ -56,6 +56,34 @@
         ]
       },
       "automerge_decision": "held_for_human"
+    },
+    {
+      "number": 11, "title": "[deprecation] migrate datetime.utcnow() to timezone-aware (superset/utils)",
+      "html_url": "https://github.com/peteragility/superset/issues/11",
+      "handler": "devin", "risk_tier": "high", "rule_id": "", "finding_type": "code-quality",
+      "status": "finished",
+      "session_id": "devin-0478ce8eb42e400b8f237635721de934",
+      "devin_url": "https://app.devin.ai/sessions/0478ce8eb42e400b8f237635721de934",
+      "pr_url": "https://github.com/peteragility/superset/pull/12",
+      "dispatch_iso": "2026-06-18T12:01:06Z",
+      "pr_iso": "2026-06-18T12:08:15Z",
+      "tests_passing": 1, "confidence": "high",
+      "acu_used": null,
+      "reviewer_session_id": "devin-5efeecc257554c3080be357ac8da5028",
+      "reviewer_url": "https://app.devin.ai/sessions/5efeecc257554c3080be357ac8da5028",
+      "reviewer_verdict": "approve",
+      "reviewer_recommendation": "auto_merge",
+      "reviewer_output": {
+        "verdict": "approve",
+        "recommendation": "auto_merge",
+        "tests_passing": true,
+        "tests_run": true,
+        "security_ok": true,
+        "confidence": "high",
+        "summary": "Independently re-ran the relevant tests; the utcnow() migration is correct and behavior-preserving. No missed cases found.",
+        "missed_cases": []
+      },
+      "automerge_decision": "held_for_human"
     }
   ]
 }
