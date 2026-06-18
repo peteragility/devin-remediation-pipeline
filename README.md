@@ -87,12 +87,18 @@ docker compose up --build   # orchestrator loop + dashboard at :8501
 Open **http://localhost:8501** and watch issues move working → PR opened.
 
 ### Option C — live, local (no Docker)
+One command runs orchestrator + webhook + dashboard:
 ```bash
-cp .env.example .env && pip install -r requirements.txt
-make scan                   # file issues
-make loop                   # orchestrator in one terminal
-make dashboard              # dashboard in another
+python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+cp .env.example .env        # fill in keys
+make scan                   # file issues (once)
+./run_local.sh              # orchestrator + webhook(:8000) + dashboard(:8501)
 ```
+> **Behind a corporate TLS-inspection proxy** (Zscaler/Netskope, "self-signed
+> certificate in chain")? Such proxies break `pip`/HTTPS *inside* Docker
+> containers. The host already trusts the corporate CA, so use this local path
+> (`run_local.sh`) instead of `docker compose`. The Dockerfile itself is correct
+> on any normal network.
 
 ---
 
