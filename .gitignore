@@ -10,3 +10,4 @@ venv/
 
 # Personal prep — keep local, do not publish
 LOOM_SCRIPT.md
+*.swp
