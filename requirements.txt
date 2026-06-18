@@ -1,0 +1,8 @@
+requests==2.32.3
+streamlit==1.40.1
+pandas==2.2.3
+python-dotenv==1.0.1
+# Scanners used by the issue-producer (scripts/scan_and_file.py).
+# Optional at runtime: the orchestrator + dashboard do not import these.
+bandit==1.8.0
+pip-audit==2.7.3

@@ -1,0 +1,27 @@
+services:
+  # The brain: dispatches Devin sessions for labelled issues and reconciles them.
+  orchestrator:
+    build: .
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/pipeline.db
+    volumes:
+      - pipeline-data:/app/data
+    command: python -m src.orchestrator loop
+    restart: unless-stopped
+
+  # The observability layer: live KPIs + run table for an eng-leader audience.
+  dashboard:
+    build: .
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/pipeline.db
+    volumes:
+      - pipeline-data:/app/data
+    command: streamlit run dashboard/app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  pipeline-data:

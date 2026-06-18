@@ -1,0 +1,27 @@
+[
+  {
+    "title": "[security] requests call missing timeout (Bandit B113)",
+    "finding_type": "security",
+    "body": "## Finding\nStatic analysis (Bandit B113) flagged HTTP requests made without a `timeout`, which can hang worker threads indefinitely and be abused for resource exhaustion.\n\n## Acceptance criteria\n- Add an explicit, sensible `timeout=` to the affected `requests.*` call(s).\n- Add/extend a unit test asserting the call is made with a timeout.\n- Bandit B113 no longer fires for the changed lines.\n\n_Source: Bandit scan, rule B113 (request_without_timeout)._"
+  },
+  {
+    "title": "[security] Weak hash (md5/sha1) without usedforsecurity=False (Bandit B324)",
+    "finding_type": "security",
+    "body": "## Finding\nBandit B324 flagged use of an insecure hash function (md5/sha1). Where the hash is non-cryptographic (e.g. cache keys), it must be marked `usedforsecurity=False`; where it is security-relevant, migrate to SHA-256.\n\n## Acceptance criteria\n- Annotate non-security hashes with `usedforsecurity=False`, or migrate security-relevant ones to a strong algorithm.\n- Preserve existing behaviour (no key/format breakage) and add a test.\n- Bandit B324 no longer fires.\n\n_Source: Bandit scan, rule B324 (hashlib_insecure_functions)._"
+  },
+  {
+    "title": "[security] yaml.load used without SafeLoader (Bandit B506)",
+    "finding_type": "security",
+    "body": "## Finding\nBandit B506 flagged `yaml.load()` without a safe loader, which can execute arbitrary objects during deserialization.\n\n## Acceptance criteria\n- Replace with `yaml.safe_load()` (or pass `Loader=yaml.SafeLoader`).\n- Confirm no functional regression in the affected parsing path; add a test.\n- Bandit B506 no longer fires.\n\n_Source: Bandit scan, rule B506 (yaml_load)._"
+  },
+  {
+    "title": "[dependency] Upgrade vulnerable transitive dependency and fix breakage",
+    "finding_type": "dependency",
+    "body": "## Finding\n`pip-audit` reported a known vulnerability in a pinned dependency. A version bump alone may break call-sites that use the changed API — those must be fixed too.\n\n## Acceptance criteria\n- Bump the affected dependency to the first non-vulnerable release.\n- Update any code/usages broken by the upgrade so the test suite passes.\n- `pip-audit` no longer reports the advisory.\n\n_Source: pip-audit dependency scan._"
+  },
+  {
+    "title": "[code-quality] Replace broad except / add missing exception context",
+    "finding_type": "code-quality",
+    "body": "## Finding\nA bare/overly-broad `except:` swallows errors and hampers debugging.\n\n## Acceptance criteria\n- Narrow the exception type(s) and/or log with context; re-raise where appropriate.\n- Add a test covering the error path.\n- No change in happy-path behaviour.\n\n_Source: lint / code-quality review._"
+  }
+]
