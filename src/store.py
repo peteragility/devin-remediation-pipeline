@@ -196,11 +196,13 @@ def fixers_to_poll() -> list[dict[str, Any]]:
 
 
 def prs_needing_reviewer() -> list[dict[str, Any]]:
-    """Devin PRs that are open but have no reviewer session yet."""
+    """Devin PRs that are open, have no reviewer yet, and haven't been gated.
+    The automerge_decision guard means a seeded/already-decided run is never
+    re-reviewed (no surprise ACU spend when the loop runs over seeded data)."""
     with _conn() as c:
         rows = c.execute(
             "SELECT * FROM runs WHERE handler='devin' AND pr_url IS NOT NULL "
-            "AND reviewer_session_id IS NULL"
+            "AND reviewer_session_id IS NULL AND automerge_decision IS NULL"
         ).fetchall()
         return [dict(r) for r in rows]
 

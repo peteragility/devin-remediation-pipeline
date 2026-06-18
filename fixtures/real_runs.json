@@ -9,7 +9,7 @@
       "devin_url": "https://app.devin.ai/sessions/e852d0817288499985ea4b15e720dca2",
       "pr_url": "https://github.com/peteragility/superset/pull/6",
       "dispatch_iso": "2026-06-18T08:50:48Z", "pr_iso": "2026-06-18T08:57:59Z",
-      "tests_passing": 1, "confidence": "high", "acu_used": null
+      "tests_passing": 1, "confidence": "high", "acu_used": null, "automerge_decision": "held_for_human"
     },
     {
       "number": 3, "title": "[security] replace yaml.load with yaml.safe_load (Bandit B506)",
@@ -19,7 +19,7 @@
       "devin_url": "https://app.devin.ai/sessions/9a0cd0c58a61496da713c50e796cbce5",
       "pr_url": "https://github.com/peteragility/superset/pull/7",
       "dispatch_iso": "2026-06-18T08:50:47Z", "pr_iso": "2026-06-18T08:58:42Z",
-      "tests_passing": 1, "confidence": "high", "acu_used": null
+      "tests_passing": 1, "confidence": "high", "acu_used": null, "automerge_decision": "held_for_human"
     },
     {
       "number": 2, "title": "[security] annotate md5 with usedforsecurity=False (Bandit B324)",
@@ -29,7 +29,7 @@
       "devin_url": "https://app.devin.ai/sessions/cdbe25a25ce34956af1fee433ee036da",
       "pr_url": "https://github.com/peteragility/superset/pull/8",
       "dispatch_iso": "2026-06-18T08:50:48Z", "pr_iso": "2026-06-18T09:00:17Z",
-      "tests_passing": 1, "confidence": "high", "acu_used": null
+      "tests_passing": 1, "confidence": "high", "acu_used": null, "automerge_decision": "held_for_human"
     },
     {
       "number": 5, "title": "[code-quality] replace bare except with a specific exception",
@@ -39,7 +39,7 @@
       "devin_url": "https://app.devin.ai/sessions/576aec1007ce49ab9c24915357402529",
       "pr_url": "https://github.com/peteragility/superset/pull/9",
       "dispatch_iso": "2026-06-18T08:50:46Z", "pr_iso": "2026-06-18T09:02:01Z",
-      "tests_passing": 1, "confidence": "high", "acu_used": null
+      "tests_passing": 1, "confidence": "high", "acu_used": null, "automerge_decision": "held_for_human"
     },
     {
       "number": 4, "title": "[dependency] upgrade vulnerable PyJWT and fix breakage",
