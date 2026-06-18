@@ -68,28 +68,61 @@ mechanism working, on the record.
 
 ---
 
-## Quickstart
+## Setup
 
-### Docker (primary)
 ```bash
-cp .env.example .env          # fill DEVIN_API_KEY, GITHUB_TOKEN, GITHUB_REPO
-python -m scripts.setup_knowledge   # one-time: create org Knowledge → put id in .env
-docker compose up --build     # orchestrator loop + dashboard (:8501) [+ webhook :8000]
+cp .env.example .env                 # fill DEVIN_API_KEY, GITHUB_TOKEN, GITHUB_REPO
+python -m scripts.setup_knowledge    # one-time: create org Knowledge -> paste id into .env as KNOWLEDGE_ID
+make seed                            # load the REAL run facts (PR #10 + reviewer verdict) into the dashboard
+docker compose up --build            # orchestrator loop + dashboard (:8501) + webhook (:8000)
 ```
-Open **http://localhost:8501**.
+Open **http://localhost:8501**. The orchestrator loop now autonomously carries any
+in-flight work through fix → review → gate; the dashboard reflects it live.
 
-### See the real demo state instantly (no waiting)
-```bash
-python -m scripts.seed_demo   # loads the REAL run facts (PR #10, reviewer verdict, …)
-streamlit run dashboard/app.py
-```
+> **Offline (no keys / no ACUs):** `DEVIN_SIMULATE=true make seed && DEVIN_SIMULATE=true streamlit run dashboard/app.py`.
+> In simulate mode the pipeline never writes to real GitHub.
 
-### Fully offline (no keys, no ACUs)
-```bash
-DEVIN_SIMULATE=true python -m src.orchestrator once   # x2 to advance the loop
-DEVIN_SIMULATE=true streamlit run dashboard/app.py
-```
-In simulate mode the pipeline never writes to real GitHub.
+---
+
+## Demo flow (what the 5-minute walkthrough shows)
+
+Pre-run everything (above) so nothing is waited on live. Have five tabs open:
+**dashboard** (:8501), the fork's **Issues**, **PR #10**, the **reviewer's review** on
+PR #10, and one **Devin session**.
+
+1. **The fleet, at a glance** — the dashboard. One event produced a backlog of
+   remediations: a router split them into a `$0 codemod` lane and a `Devin` lane;
+   each Devin PR was independently reviewed; the gate decided merge vs. human.
+   *"You'd never build mission-control for an IDE copilot — a human is already
+   watching. This dashboard existing is the proof the fleet runs unattended."*
+
+2. **The event + architecture** — the fork's Issues (the backlog) and the diagram.
+   A scan or webhook drops findings in; everything downstream is automatic.
+
+3. **Hero: autonomous breaking-change fix (PR #10)** — the thin issue ("upgrade and
+   fix breakage") next to Devin's PR: it *discovered* PyJWT 2.13's 32-byte-key
+   breaking change, fixed every short secret across 5 files, wrote a regression
+   test, and ran tests until green. Unattended. A version-bumper opens a red PR
+   here; a copilot needs a human at the keyboard.
+
+4. **Devin reviews Devin** — the reviewer session's **Request Changes** on PR #10:
+   it independently re-ran 83 tests and found a 6th short secret the fixer missed,
+   so the gate **held the PR for a human**. Agents check agents; only clean work
+   clears the gate.
+
+5. **Routing + trust-ramp** — back on the dashboard: the trivial Bandit fixes went
+   to the codemod for `$0`; Devin was spent only on the judgment cases (the
+   dependency upgrade and a `datetime.utcnow()` deprecation migration). Auto-merge
+   is OFF by default; the trust-ramp earns it per-rule.
+
+6. **Why Devin + close** — the differentiation is the operational layer (session
+   API, structured-verdict gating, org Knowledge, ACU governance), and the close is
+   the dashboard's cost-per-fix: a backlog now measured in PRs and dollars per fix.
+
+### Optional live trigger (real-time event, low risk)
+With the webhook running, label any issue `devin-fix` on camera and watch it appear
+on the dashboard and dispatch within seconds — then cut back to the pre-run results
+(don't wait the ~40 min for a fix to complete on camera).
 
 ---
 
