@@ -1,12 +1,12 @@
-"""The orchestrator: turns issue events into managed Devin work and reconciles
+"""The orchestrator: turns labelled issues into managed Devin work and reconciles
 outcomes back to GitHub + the datastore.
 
 Pipeline per issue:
-  route()        cost-aware: trivial -> codemod ($0), judgment -> Devin
-  dispatch       Devin fixer session (idempotent, ACU-capped, org-Knowledge attached)
-  reconcile      poll fixer -> on PR, dispatch a reviewer Devin -> poll reviewer
-  gate           risk-tiered auto-merge (OFF by default) on reviewer-approve +
-                 green + low-risk; otherwise hold for a human
+  dispatch   poll open `devin-fix` issues -> Devin fixer session (idempotent,
+             ACU-capped, org-Knowledge attached), one per issue, in parallel
+  reconcile  poll fixer -> on PR, dispatch an independent reviewer Devin -> poll it
+  gate       auto-merge (OFF by default) only if reviewer approved + tests green +
+             small diff; otherwise hold for a human
 
 Run:  python -m src.orchestrator [dispatch|reconcile|once|loop]
 """
@@ -18,7 +18,7 @@ import logging
 import time
 
 import config
-from src import prompts, router, store
+from src import prompts, store
 from src.devin_client import DevinClient
 from src.github_client import GitHubClient
 
@@ -30,13 +30,25 @@ logging.basicConfig(
 log = logging.getLogger("orchestrator")
 
 
+def _finding_type(issue: dict) -> str:
+    """Coarse category for the dashboard (from labels/title)."""
+    blob = (" ".join(l.get("name", "") for l in issue.get("labels", [])) + " " + (issue.get("title") or "")).lower()
+    if "depend" in blob or "cve" in blob or "upgrade" in blob:
+        return "dependency"
+    if "deprecat" in blob:
+        return "deprecation"
+    if "security" in blob or "bandit" in blob or "vuln" in blob:
+        return "security"
+    return "code-quality"
+
+
 class Orchestrator:
     def __init__(self):
         self.devin = DevinClient()
         self.gh = GitHubClient()
         store.init()
 
-    # ── routing + dispatch ──────────────────────────────────────────────────────
+    # ── dispatch ────────────────────────────────────────────────────────────────
     def dispatch(self) -> int:
         issues = self.gh.list_open_issues(config.TARGET_LABEL)
         log.info("Found %d open issue(s) labelled '%s'", len(issues), config.TARGET_LABEL)
@@ -44,38 +56,18 @@ class Orchestrator:
         for issue in issues:
             row = store.get(issue["number"])
             if row is None:
-                dispatched += int(bool(self._intake(issue)))
+                dispatched += int(self._dispatch_devin(issue))
             elif row["status"] == "dispatching" and not row["session_id"] and row["attempts"] < config.MAX_ATTEMPTS:
                 # crash/transient recovery: a row exists but the API call never landed.
-                dispatched += int(bool(self._attempt_dispatch(issue, router.route(issue))))
+                dispatched += int(self._dispatch_devin(issue))
         return dispatched
 
-    def dispatch_one(self, issue: dict) -> bool:
-        """Single-issue entry used by the real-time webhook receiver."""
-        if store.has_run(issue["number"]):
-            return False
-        return bool(self._intake(issue))
-
-    def _intake(self, issue: dict):
-        r = router.route(issue)
-        if r.handler == "codemod":
-            # Trivial, deterministic — a linter handles it for $0. Never spend an agent.
-            store.insert(
-                issue, handler="codemod", risk_tier=r.risk_tier, finding_type=r.finding_type,
-                rule_id=r.rule_id, status="codemod_done", acu_used=0.0,
-                automerge_decision="codemod", structured_output=json.dumps({"routed": r.reason}),
-            )
-            log.info("Routed #%s -> codemod ($0): %s", issue["number"], r.reason)
-            return False
-        return self._attempt_dispatch(issue, r)
-
-    def _attempt_dispatch(self, issue: dict, r: router.Route) -> bool:
+    def _dispatch_devin(self, issue: dict) -> bool:
         num = issue["number"]
         # Write the row BEFORE the API call so a crash mid-create is recoverable
-        # (no orphaned, paid-for session that we forget about).
+        # (no orphaned, paid-for session we forget about).
         if store.get(num) is None:
-            store.insert(issue, handler="devin", risk_tier=r.risk_tier,
-                         finding_type=r.finding_type, rule_id=r.rule_id, status="dispatching")
+            store.insert(issue, handler="devin", finding_type=_finding_type(issue), status="dispatching")
         if store.active_count() >= config.MAX_CONCURRENCY:
             log.info("Concurrency cap (%d) reached; deferring #%s.", config.MAX_CONCURRENCY, num)
             return False
@@ -192,8 +184,6 @@ class Orchestrator:
     def _evaluate_gate(self, row: dict) -> tuple[str, str]:
         if not config.AUTOMERGE_ENABLED:
             return "disabled", "auto-merge disabled by default — routed to human review"
-        if row["risk_tier"] != "low" or (row["rule_id"] or "") not in config.LOW_RISK_RULES:
-            return "held_for_human", "high-risk change (e.g. dependency / judgment) — never auto-merged"
         if row["reviewer_verdict"] != "approve":
             return "held_for_human", f"reviewer verdict = {row['reviewer_verdict']}"
         ro = json.loads(row.get("reviewer_output") or "{}")
@@ -203,7 +193,7 @@ class Orchestrator:
         if pr.get("changed_files", 0) > config.MAX_AUTOMERGE_FILES or \
            (pr.get("additions", 0) + pr.get("deletions", 0)) > config.MAX_AUTOMERGE_LINES:
             return "held_for_human", "diff exceeds auto-merge size guardrail"
-        return "merged", "low-risk, reviewer-approved, tests green, small diff"
+        return "merged", "reviewer-approved, tests green, small diff"
 
     # ── GitHub comments ─────────────────────────────────────────────────────────
     def _comment_pr_opened(self, num: int, pr_url: str, session: dict) -> None:
@@ -224,12 +214,11 @@ class Orchestrator:
     def _comment_gate(self, num: int, row: dict, decision: str, reason: str) -> None:
         ro = json.loads(row.get("reviewer_output") or "{}")
         missed = ro.get("missed_cases") or []
-        icon = {"merged": "✅", "held_for_human": "🛑", "disabled": "🛑", "codemod": "⚡"}.get(decision, "•")
+        icon = {"merged": "✅", "held_for_human": "🛑", "disabled": "🛑"}.get(decision, "•")
         body = (
             f"{icon} **Merge gate: `{decision}`** — {reason}\n\n"
             f"- **Reviewer verdict:** {row.get('reviewer_verdict', 'n/a')} "
             f"(recommendation: {row.get('reviewer_recommendation', 'n/a')})\n"
-            f"- **Risk tier:** {row.get('risk_tier', 'n/a')}\n"
         )
         if missed:
             body += "- **Reviewer found missed cases:**\n" + "".join(f"    - {m}\n" for m in missed[:5])

@@ -2,21 +2,15 @@
 title: Autonomous Remediation Pipeline (Devin as a governed primitive)
 ---
 flowchart LR
-    subgraph SRC["EVENT SOURCES"]
-        direction TB
-        S1["Scheduled scan<br/>Bandit + pip-audit"]
-        S2["GitHub webhook<br/>(issue opened / labeled)"]
+    subgraph SRC["EVENT SOURCE"]
+        S1["Scan (Bandit + pip-audit)<br/>files devin-fix issues"]
     end
 
-    R{{"ROUTER<br/>cost-aware"}}
+    O{{"ORCHESTRATOR<br/>polls open issues every 10s<br/>idempotent · ACU-capped"}}
 
-    subgraph CM["CODEMOD ($0)"]
-        C1["Trivial lint fixes<br/>B113 / B324 / B506 / E722<br/>→ ruff, no agent"]
-    end
-
-    subgraph FX["DEVIN FIXER — fleet (N parallel)"]
+    subgraph FX["DEVIN FIXER — fleet (N in parallel)"]
         direction TB
-        F1["create session<br/>idempotent · ACU-capped<br/>+ org Knowledge"]
+        F1["create session<br/>+ org Knowledge"]
         F2["sets up env · writes code<br/>runs tests · iterates · opens PR"]
         F1 --> F2
     end
@@ -25,28 +19,27 @@ flowchart LR
         V1["independent audit<br/>structured verdict<br/>(approve / request_changes)"]
     end
 
-    G{{"MERGE GATE<br/>approve + green + low-risk?"}}
+    G{{"MERGE GATE<br/>approve + tests green?"}}
 
     subgraph OUT["OUTPUTS"]
         direction TB
-        O1["auto-merge<br/>(low-risk only, OFF by default)"]
+        O1["auto-merge<br/>(OFF by default)"]
         O2["hold for human<br/>(branch protection)"]
     end
 
     K[("Devin Knowledge<br/>org conventions<br/>inherited by every session")]
     DB[("SQLite<br/>system of record")]
-    DASH["Dashboard<br/>time-to-PR · $/fix<br/>gate decisions"]
+    DASH["Dashboard<br/>issue → session → PR<br/>time-to-PR · cost"]
 
-    S1 & S2 -->|"new issue (devin-fix)"| R
-    R -->|"trivial → $0"| C1
-    R -->|"judgment"| F1
+    S1 -->|"new issue (devin-fix)"| O
+    O -->|"one session per issue"| F1
     K -.-> F1
     K -.-> V1
     F2 -->|"PR"| V1
     V1 -->|"verdict artifact"| G
     G -->|"yes"| O1
     G -->|"no / disabled"| O2
-    R --> DB
+    O --> DB
     F2 --> DB
     V1 --> DB
     G --> DB

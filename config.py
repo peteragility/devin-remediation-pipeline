@@ -19,12 +19,9 @@ DEVIN_SIMULATE = _bool("DEVIN_SIMULATE")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 TARGET_LABEL = os.getenv("TARGET_LABEL", "devin-fix")
-# Shared secret for verifying GitHub webhook payloads (HMAC-SHA256). Optional in
-# dev; strongly recommended in any shared/exposed deployment.
-GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
 # Orchestrator
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "20"))
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))
 MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENCY", "5"))
 DB_PATH = os.getenv("DB_PATH", "data/pipeline.db")
 # Hung-session guard: a session in flight longer than this is marked 'expired'.
@@ -40,15 +37,10 @@ ATTENTION_STATES = {"blocked"}
 # Reviewer-Devin (a second session reviews the fixer's PR).
 REVIEWER_ENABLED = _bool("REVIEWER_ENABLED", "true")
 
-# Risk-tiered auto-merge. OFF by default — the demo shows the GATE DECISION, and
-# GitHub branch protection is the real platform-enforced gate. When enabled, a PR
-# merges only if: reviewer approved AND tests green AND its rule is low-risk.
+# Auto-merge. OFF by default — by default every PR is held for a human, and GitHub
+# branch protection is the real platform-enforced gate. When enabled, a PR merges
+# only if the reviewer Devin approved AND tests are green AND the diff is small.
 AUTOMERGE_ENABLED = _bool("AUTOMERGE_ENABLED", "false")
-# Bandit rule ids safe enough to be auto-merge eligible. Dependency bumps and
-# anything not listed here ALWAYS route to a human.
-LOW_RISK_RULES = set(
-    r.strip() for r in os.getenv("LOW_RISK_RULES", "B113,B324,B506,E722").split(",") if r.strip()
-)
 # Auto-merge diff guardrails: anything larger always escalates to a human.
 MAX_AUTOMERGE_FILES = int(os.getenv("MAX_AUTOMERGE_FILES", "5"))
 MAX_AUTOMERGE_LINES = int(os.getenv("MAX_AUTOMERGE_LINES", "80"))
