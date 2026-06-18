@@ -53,7 +53,9 @@ def build_prompt(issue: dict, repo: str) -> str:
    with "Fixes #{number}" so it links the issue, and summarise the change.
 
 # Guardrails
-- One issue, one focused PR. Do not merge it — a human will review.
+- One issue, one focused PR. Open the PR; do NOT merge it yourself — an
+  independent reviewer and a merge gate handle that.
+- Follow the repository's existing conventions and any org knowledge provided to you.
 - If you become blocked (missing access, ambiguous requirement, failing
   environment), set structured_output.status = "blocked" with a clear
   blocked_reason and stop rather than guessing.
@@ -66,8 +68,56 @@ populated once the PR is open. This output is read by an automated dashboard.
 
 
 def session_tags(issue: dict) -> list[str]:
-    return ["superset-remediation", f"issue:{issue['number']}", config.TARGET_LABEL]
+    return ["superset-remediation", "role:fixer", f"issue:{issue['number']}", config.TARGET_LABEL]
 
 
 def session_title(issue: dict) -> str:
     return f"Fix #{issue['number']}: {issue['title']}"[:120]
+
+
+# ── Reviewer-Devin: a second session independently audits the fixer's PR ─────────
+# The value is not "an agent reviewed an agent" (commodity) — it's that the verdict
+# is a STRUCTURED ARTIFACT the orchestrator reads to gate the merge.
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "pr_number": {"type": "integer"},
+        "phase": {"type": "string", "enum": ["analyzing", "searching", "testing", "posting_review", "done", "blocked"]},
+        "verdict": {"type": "string", "enum": ["approve", "request_changes", "comment"]},
+        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "summary": {"type": "string"},
+        "missed_cases": {"type": "array", "items": {"type": "string"}},
+        "tests_run": {"type": "boolean"},
+        "tests_passing": {"type": "boolean"},
+        "security_ok": {"type": "boolean"},
+        "recommendation": {"type": "string", "enum": ["auto_merge", "human_review", "block"]},
+        "review_posted_url": {"type": "string"},
+    },
+    "required": ["phase"],
+}
+
+
+def build_review_prompt(issue: dict, pr_url: str, repo: str) -> str:
+    number = issue["number"]
+    return f"""You are a senior staff engineer performing an INDEPENDENT, adversarial code review of a pull request that was authored by ANOTHER autonomous Devin agent. Verify the work; do not trust it.
+
+Repository: {repo}
+Pull request: {pr_url}  (remediates issue #{number}: {issue.get('title','')})
+
+Do the following:
+1. Confirm the change actually and fully resolves the issue it claims to fix.
+2. Search the WHOLE codebase for any related cases the original author may have MISSED (other call-sites, other files, similar patterns) — this is the most valuable thing you can do.
+3. Check out the PR branch and RUN ONLY THE TESTS RELEVANT to the change. Report pass/fail.
+4. Assess test adequacy, security, and any behavioral regression.
+
+Then POST a real review on the GitHub PR: approve, or request changes with specific, line-referenced comments.
+
+Maintain your structured output continuously. Set recommendation = "auto_merge" ONLY if you independently verified the tests pass AND found no missed cases AND the change is low-risk."""
+
+
+def reviewer_tags(issue: dict) -> list[str]:
+    return ["superset-remediation", "role:reviewer", f"issue:{issue['number']}"]
+
+
+def reviewer_title(issue: dict) -> str:
+    return f"Review fix for #{issue['number']}: {issue.get('title','')}"[:120]

@@ -20,7 +20,7 @@
     "body": "## Finding\n`pip-audit` reported a known vulnerability in a pinned dependency. A version bump alone may break call-sites that use the changed API — those must be fixed too.\n\n## Acceptance criteria\n- Bump the affected dependency to the first non-vulnerable release.\n- Update any code/usages broken by the upgrade so the test suite passes.\n- `pip-audit` no longer reports the advisory.\n\n_Source: pip-audit dependency scan._"
   },
   {
-    "title": "[code-quality] Replace broad except / add missing exception context",
+    "title": "[code-quality] Replace bare except with a specific exception (E722)",
     "finding_type": "code-quality",
     "body": "## Finding\nA bare/overly-broad `except:` swallows errors and hampers debugging.\n\n## Acceptance criteria\n- Narrow the exception type(s) and/or log with context; re-raise where appropriate.\n- Add a test covering the error path.\n- No change in happy-path behaviour.\n\n_Source: lint / code-quality review._"
   }

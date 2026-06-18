@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any, Optional
 
 import requests
@@ -26,7 +27,10 @@ class GitHubClient:
         simulate: bool = config.DEVIN_SIMULATE,
     ):
         self.repo = repo
-        self.simulate = simulate and not token
+        # In simulate mode (or with no token) NEVER write to real GitHub — read
+        # fixtures and log would-be writes. Prevents offline demos from polluting
+        # the live repo.
+        self.simulate = simulate or not token
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -91,6 +95,32 @@ class GitHubClient:
             timeout=30,
         )
         r.raise_for_status()
+
+    # ── pull requests (for the auto-merge gate) ────────────────────────────────────
+    def get_pr(self, number: int) -> dict[str, Any]:
+        if self.simulate:
+            return {"state": "open", "mergeable": True, "mergeable_state": "clean",
+                    "additions": 12, "deletions": 3, "changed_files": 2}
+        r = self._session.get(f"{API}/repos/{self.repo}/pulls/{number}", timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    def merge_pr(self, number: int, method: str = "squash") -> dict[str, Any]:
+        if self.simulate:
+            log.info("[sim] merge PR #%s (%s)", number, method)
+            return {"merged": True}
+        r = self._session.put(
+            f"{API}/repos/{self.repo}/pulls/{number}/merge",
+            json={"merge_method": method},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    @staticmethod
+    def pr_number_from_url(url: str) -> Optional[int]:
+        m = re.search(r"/pull/(\d+)", url or "")
+        return int(m.group(1)) if m else None
 
     def ensure_label(self, name: str, color: str = "5319e7", desc: str = "") -> None:
         if self.simulate:

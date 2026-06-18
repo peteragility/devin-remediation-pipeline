@@ -1,139 +1,111 @@
-# Autonomous Remediation Pipeline — powered by Devin
+# Autonomous Remediation Pipeline — Devin as a governed primitive
 
 > Event-driven automation that clears an engineering team's **security & dependency
-> backlog** on Apache Superset. A scan files issues → an orchestrator dispatches a
-> **Devin session per issue** → Devin fixes the code, runs tests, and opens a PR →
-> status flows back to the issue and a **live observability dashboard**. Humans only
-> review PRs.
+> backlog** on Apache Superset. Findings are **routed** (trivial → a $0 codemod;
+> judgment → Devin), each Devin **fixer** session adapts code and runs tests until
+> green and opens a PR, a second Devin **reviewer** independently audits it, and a
+> risk-tiered **merge gate** decides auto-merge vs. human. Everything is observable
+> on a live dashboard.
 
-Built for the Cognition take-home. Optimised for a *working end-to-end demo*.
-
----
-
-## Why this matters (the pitch)
-
-Every engineering org carries a backlog of security findings and dependency
-upgrades that never gets cleared — it's low-status toil that loses to feature work
-every sprint. Tools like Dependabot/Renovate can *bump a version*, but they can't
-**fix the breakage the bump causes, adapt the calling code, or repair the tests.**
-
-Devin closes that loop. This system treats Devin as a **fleet primitive**: N
-findings become N autonomous engineers working in parallel, each producing a
-review-ready PR with passing tests — observable end-to-end by an engineering leader.
-
----
-
-## Architecture
+Built for the Cognition take-home. The repo, the claims, and the demo all describe
+the **same** system — nothing here is narrated-but-unbuilt.
 
 ![Architecture](docs/architecture.png)
 
-<details><summary>ASCII version</summary>
+---
 
-```
-   EVENT SOURCE                 ORCHESTRATOR (brain)              OBSERVABILITY
- ┌───────────────┐          ┌───────────────────────┐         ┌──────────────┐
- │ scan_and_file │  issues  │ dispatch():           │ Devin   │  Streamlit   │
- │ Bandit +      ├─────────▶│  issue -> POST        ├────────▶│  dashboard   │
- │ pip-audit     │ (GitHub  │  /v1/sessions         │ v1 API  │ KPIs + table │
- │  └ fixtures   │  labels) │  (idempotent, ACU-cap)│         │ MTTR · ACU · │
- └───────────────┘          │ reconcile():          │◀────────┤ success rate │
-        ▲                   │  GET /v1/sessions/{id}│  poll   └──────┬───────┘
-        │ (also: GitHub     │  -> status + PR +     │                │
-        │  webhook in prod) │     structured_output │         reads  │ SQLite
-        │                   │  -> comment issue     │◀───────────────┘ (system
-        └───────────────────┤  -> persist (SQLite)  │                  of record)
-          PR link back      └───────────────────────┘
-```
+## Why this matters
 
-</details>
+Every engineering org carries a backlog of security findings and dependency
+upgrades that never gets cleared — it's low-status toil that loses to feature work
+every sprint. This pipeline clears it autonomously and shows a leader, on one
+screen, that it's working.
 
-### Key design decisions (the "How")
-1. **Devin as a fleet, not a call.** One session per issue, dispatched in
-   parallel, each tracked independently. → `src/orchestrator.py`
-2. **Structured-output contract.** Each session is given a JSON Schema
-   (`structured_output_schema`) so its result is *machine-readable*
-   (`status, root_cause, files_changed, tests_passing, pr_url, confidence`) — the
-   orchestrator never scrapes prose. → `src/prompts.py`
-3. **Idempotency & concurrency caps.** `idempotent=true` + an issue→session map in
-   SQLite means re-running never double-dispatches; `MAX_CONCURRENCY` bounds
-   in-flight work. → `src/store.py`
-4. **Cost governance.** `max_acu_limit` caps spend per session; ACU spend is
-   surfaced on the dashboard. A VP cares this can't run away.
-5. **Human-in-the-loop.** Devin opens PRs; it never self-merges.
-6. **Poll-based reconciler.** Devin can't be forced to push updates, so we poll
-   `GET /v1/sessions/{id}` every `POLL_INTERVAL`s over a clean state machine
-   (`working → finished/blocked/expired`).
+## Why Devin, and not an interactive copilot (the honest version)
+
+Claude Code, Codex, and Cursor are **interactive copilots** — an AI in a developer's
+editor where a human drives the session. Their unit of work is *"a developer
+session."* They now have headless modes, so "only Devin can run unattended" is **not**
+a claim we make.
+
+The defensible claim is **operational**: Devin is purpose-built to run agents as
+**governed fleet infrastructure**, and this system exercises exactly that layer:
+
+- **Event → session API** with **structured-output contracts** — the orchestrator
+  reads machine state, never scrapes prose.
+- **Devin reviews Devin** — the reviewer's verdict is a *structured artifact* that
+  programmatically **gates the merge** (not "an agent left a comment").
+- **Org Knowledge** attached to every session — conventions live once in Devin and
+  the whole fleet inherits them unattended.
+- **Native cost governance** — an enforced per-session ACU cap.
+- **Idempotent, crash-safe, concurrency-capped dispatch** — the plumbing you need
+  when no human is watching.
+
+> You would never build a mission-control dashboard for an IDE copilot — a human is
+> already watching. The fact that this fleet *needs* one is the proof it runs unattended.
+
+And the **router** is the cost-aware answer to "why not just a codemod?": we *use* a
+codemod for codemod-shaped work (Bandit B113/B324/B506, bare-except) for $0, and
+reserve Devin for the judgment cases a rules engine can't touch.
+
+---
+
+## The pipeline
+
+| Stage | What happens | Code |
+|---|---|---|
+| **Route** | Each finding → `codemod` ($0) or `devin` (judgment) + a risk tier | `src/router.py` |
+| **Fix** | Devin session (idempotent, ACU-capped, **Knowledge attached**) adapts code, runs tests until green, opens a PR | `src/orchestrator.py`, `src/prompts.py` |
+| **Review** | A second Devin independently audits the PR → structured verdict | `prompts.build_review_prompt`, `REVIEW_SCHEMA` |
+| **Gate** | Auto-merge **only if** reviewer-approved AND tests green AND low-risk AND small diff; else hold for a human. **OFF by default.** | `Orchestrator._evaluate_gate` |
+| **Observe** | Every step persisted; KPIs on a live dashboard | `src/store.py`, `dashboard/app.py` |
+
+The hero case is real: **PR #10** upgraded PyJWT for a CVE, *discovered* the new
+32-byte-HMAC breaking change, fixed every short secret across 5 files, and wrote a
+regression test — then the **reviewer Devin found a 6th secret the fixer missed** and
+correctly withheld approval. The gate held it for a human. That's the safety
+mechanism working, on the record.
 
 ---
 
 ## Quickstart
 
-### Option A — fully offline demo (no keys, no ACUs)
-Proves the whole loop using a built-in Devin simulator + fixture issues.
+### Docker (primary)
 ```bash
-pip install -r requirements.txt
-DEVIN_SIMULATE=true python -m src.orchestrator once   # dispatch (sim sessions)
-DEVIN_SIMULATE=true python -m src.orchestrator once   # reconcile -> PRs appear
-DEVIN_SIMULATE=true streamlit run dashboard/app.py     # open http://localhost:8501
+cp .env.example .env          # fill DEVIN_API_KEY, GITHUB_TOKEN, GITHUB_REPO
+python -m scripts.setup_knowledge   # one-time: create org Knowledge → put id in .env
+docker compose up --build     # orchestrator loop + dashboard (:8501) [+ webhook :8000]
 ```
-(or just `make sim-demo`)
+Open **http://localhost:8501**.
 
-### Option B — live, with Docker (recommended for the real demo)
+### See the real demo state instantly (no waiting)
 ```bash
-cp .env.example .env        # fill in DEVIN_API_KEY, GITHUB_TOKEN, GITHUB_REPO
-make scan                   # EVENT: file issues into your fork (or use fixtures)
-docker compose up --build   # orchestrator loop + dashboard at :8501
+python -m scripts.seed_demo   # loads the REAL run facts (PR #10, reviewer verdict, …)
+streamlit run dashboard/app.py
 ```
-Open **http://localhost:8501** and watch issues move working → PR opened.
 
-### Option C — live, local (no Docker)
-One command runs orchestrator + webhook + dashboard:
+### Fully offline (no keys, no ACUs)
 ```bash
-python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
-cp .env.example .env        # fill in keys
-make scan                   # file issues (once)
-./run_local.sh              # orchestrator + webhook(:8000) + dashboard(:8501)
+DEVIN_SIMULATE=true python -m src.orchestrator once   # x2 to advance the loop
+DEVIN_SIMULATE=true streamlit run dashboard/app.py
 ```
-> **Behind a corporate TLS-inspection proxy** (Zscaler/Netskope, "self-signed
-> certificate in chain")? Such proxies break `pip`/HTTPS *inside* Docker
-> containers. The host already trusts the corporate CA, so use this local path
-> (`run_local.sh`) instead of `docker compose`. The Dockerfile itself is correct
-> on any normal network.
+In simulate mode the pipeline never writes to real GitHub.
 
 ---
 
-## How each deliverable maps
+## Observability — and how the metrics stay honest
 
-| Challenge requirement | Where |
-|---|---|
-| **Triggered by an event** | Real-time: `src/webhook.py` (GitHub `issues` webhook → instant dispatch). Batch: `scripts/scan_and_file.py` (scan → issues). |
-| **Programmatically manage Devin sessions** | `src/devin_client.py` + `src/orchestrator.py` (create, poll, comment, steer) |
-| **Observable outputs** | GitHub PRs + issue comments; Streamlit dashboard (`dashboard/app.py`) |
-| **Observability / analytics** | KPIs: throughput, success rate, MTTR, ACU spend, status & finding-type breakdown |
-| **Dockerised** | `Dockerfile` + `docker-compose.yml` (orchestrator + dashboard, shared volume) |
-| **Forked Superset + issues** | `make scan` files them; fixtures in `fixtures/findings.json` |
+| Metric | Definition | Source |
+|---|---|---|
+| Time-to-PR | dispatch → PR, real wall-clock | orchestrator timestamps in SQLite |
+| Success | PR opened **AND** tests independently green | `tests_passing` |
+| Reviewer-audited | PRs a second Devin reviewed | reviewer verdict |
+| Gate decision | auto-merged / held-for-human / codemod | `_evaluate_gate` |
+| Cost / fix | ACU × `ACU_USD_RATE` | **ACU read from the Devin console** into `fixtures/real_runs.json` |
 
----
-
-## Real-time trigger (GitHub webhook)
-
-The scheduled scan is the *batch* event source; `src/webhook.py` is the
-*real-time* one. A GitHub `issues` webhook (opened / labeled / reopened) fires an
-**instant** Devin dispatch — no waiting for the next scan or poll. Both paths
-funnel into the same `Orchestrator.dispatch_one()`.
-
-```bash
-make webhook                     # runs FastAPI on :8000  (docker compose runs it too)
-ngrok http 8000                  # expose it for GitHub (dev)
-```
-Then in your fork: **Settings → Webhooks → Add webhook**
-- Payload URL: `https://<your-ngrok>/webhook/github`
-- Content type: `application/json`
-- Secret: same value as `GITHUB_WEBHOOK_SECRET` in `.env`
-- Events: **Issues**
-
-Now labeling any issue `devin-fix` dispatches Devin within seconds. Payloads are
-authenticated via HMAC-SHA256 when the secret is set. Health check: `GET /health`.
+Per-session ACU is **not exposed by the session API on this tier**, so it is read
+from Devin's consumption console and entered as real numbers — never guessed. The
+enforced `max_acu_limit` is the live cost-governance primitive.
 
 ---
 
@@ -142,42 +114,42 @@ authenticated via HMAC-SHA256 when the secret is set. Health check: `GET /health
 | Var | Purpose |
 |---|---|
 | `DEVIN_API_KEY` | Devin API key (`apk_…`) |
-| `DEVIN_MAX_ACU` | Per-session ACU ceiling (cost guard) |
-| `DEVIN_SIMULATE` | `true` = run against the offline simulator |
 | `GITHUB_TOKEN` / `GITHUB_REPO` | `repo`-scoped token + your `user/superset` fork |
-| `TARGET_LABEL` | Issue label that triggers remediation (default `devin-fix`) |
-| `POLL_INTERVAL` / `MAX_CONCURRENCY` | Reconcile cadence + in-flight cap |
-| `SUPERSET_PATH` | Local Superset checkout to scan (optional; else fixtures) |
+| `KNOWLEDGE_ID` | Org Knowledge entry attached to every session (`scripts/setup_knowledge.py`) |
+| `REVIEWER_ENABLED` | Dispatch a reviewer Devin per PR (default on) |
+| `AUTOMERGE_ENABLED` | Risk-tiered auto-merge (**default OFF** — gate routes to human) |
+| `LOW_RISK_RULES` | Rule ids eligible for auto-merge (deps never qualify) |
+| `ACU_USD_RATE` / `ENG_HOUR_USD` | Cost + ROI conversion for the dashboard |
+| `DEVIN_MAX_ACU` | Enforced per-session ACU cap |
+| `MAX_CONCURRENCY` / `POLL_INTERVAL` / `MAX_RUN_AGE_SECONDS` / `MAX_ATTEMPTS` | Fleet + robustness controls |
+
+The **real** merge gate in production is **GitHub branch protection** (required CI +
+required review) — enforced by the platform, independent of this orchestrator.
 
 ---
 
 ## Repo layout
 ```
-src/devin_client.py    Devin v1 API wrapper (+ simulate hook)
-src/github_client.py   GitHub issues/comments/labels (+ fixture fallback)
-src/prompts.py         Scoped prompt + structured-output JSON Schema
-src/orchestrator.py    dispatch / reconcile / loop  (the brain)
-src/webhook.py         FastAPI receiver: real-time GitHub issue trigger
-src/store.py           SQLite system-of-record
-src/simulator.py       Deterministic offline Devin
-scripts/scan_and_file.py   Batch event source: Bandit/pip-audit -> GitHub issues
-dashboard/app.py       Streamlit observability dashboard
-fixtures/findings.json Sample findings (offline + fallback)
-docs/architecture.png  Architecture diagram
+src/router.py        cost-aware routing (codemod vs Devin)
+src/orchestrator.py  route → dispatch → reconcile → review → gate (crash-safe, retrying)
+src/devin_client.py  Devin API wrapper (+ Knowledge), simulate hook
+src/github_client.py issues / comments / PR status / merge
+src/prompts.py       fixer + reviewer prompts and structured-output schemas
+src/store.py         SQLite system-of-record
+src/webhook.py       real-time GitHub issue trigger (FastAPI)
+src/simulator.py     deterministic offline Devin (fixer + reviewer)
+scripts/setup_knowledge.py   create the org Knowledge entry
+scripts/scan_and_file.py     scan → file issues (batch event source)
+scripts/seed_demo.py         load REAL run facts for the dashboard
+dashboard/app.py     observability dashboard
+fixtures/real_runs.json      real session ids, PR, reviewer verdict, ACU
+docs/architecture.png        architecture diagram
 ```
 
----
-
-## Extending in a real customer engagement (the "When")
-- **More event sources**: the GitHub webhook is built (`src/webhook.py`); the same
-  receiver pattern extends to ServiceNow / Jira / CodeQL / Snyk scan-complete events.
-- **Severity routing**: auto-merge low-risk fixes that pass CI above a confidence
-  threshold; escalate the rest to a named reviewer.
-- **CI gating**: block the comment-back until the PR's checks go green.
-- **Multi-repo / fleet**: one config per repo; the dashboard already aggregates.
-- **Devin telemetry**: enrich KPIs from Devin's own consumption/metrics API
-  (`/v3/.../consumption/*`, `/metrics/prs`) for true cost-per-fix reporting.
-
----
-
-_Devin opens PRs; humans merge. Nothing here self-merges._
+## Extending in a real engagement
+- **Triggers:** the GitHub webhook is built; the same receiver extends to
+  Snyk/CodeQL/Jira/ServiceNow scan-complete events.
+- **Trust ramp:** enable `AUTOMERGE_ENABLED` per-rule after a baseline of
+  human-approved Devin PRs; widen the low-risk allowlist as confidence grows.
+- **Scale:** one config per repo; the dashboard already aggregates cost-per-fix and
+  cycle time for leadership.

@@ -3,6 +3,12 @@
 install:        ## install python deps into the current environment
 	pip install -r requirements.txt
 
+knowledge:      ## one-time: create the org Knowledge entry (prints id for .env)
+	python -m scripts.setup_knowledge
+
+seed:           ## load REAL run facts into the dashboard DB (no waiting)
+	python -m scripts.seed_demo
+
 scan:           ## EVENT SOURCE: scan repo (or fixtures) -> file GitHub issues
 	python -m scripts.scan_and_file
 

@@ -1,41 +1,37 @@
 services:
-  # The brain: dispatches Devin sessions for labelled issues and reconciles them.
+  # The brain: route → dispatch Devin → reconcile → review → gate.
   orchestrator:
     build: .
     env_file: .env
     environment:
       DB_PATH: /app/data/pipeline.db
     volumes:
-      - pipeline-data:/app/data
+      - ./data:/app/data        # bind mount so `scripts/seed_demo` on the host shows up here
     command: python -m src.orchestrator loop
     restart: unless-stopped
 
-  # Real-time event trigger: GitHub issue webhook -> instant Devin dispatch.
-  # (The orchestrator loop above still handles reconcile + acts as a backstop.)
+  # Real-time event trigger: GitHub issue webhook -> instant dispatch.
   webhook:
     build: .
     env_file: .env
     environment:
       DB_PATH: /app/data/pipeline.db
     volumes:
-      - pipeline-data:/app/data
+      - ./data:/app/data
     command: uvicorn src.webhook:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     restart: unless-stopped
 
-  # The observability layer: live KPIs + run table for an eng-leader audience.
+  # Observability: live KPIs + run table for an eng-leader audience.
   dashboard:
     build: .
     env_file: .env
     environment:
       DB_PATH: /app/data/pipeline.db
     volumes:
-      - pipeline-data:/app/data
+      - ./data:/app/data
     command: streamlit run dashboard/app.py --server.port=8501 --server.address=0.0.0.0
     ports:
       - "8501:8501"
     restart: unless-stopped
-
-volumes:
-  pipeline-data:

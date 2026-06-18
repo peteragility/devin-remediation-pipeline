@@ -1,0 +1,61 @@
+{
+  "_note": "REAL run facts from the live pipeline against peteragility/superset. Timestamps and PR/session ids are real. Per-session ACU is read from the Devin consumption console (app.devin.ai > session > ACU) and entered as acu_used — the session API on this tier does not expose it, so it is left null until you fill it rather than guessed.",
+  "runs": [
+    {
+      "number": 1, "title": "[security] requests call missing timeout (Bandit B113)",
+      "html_url": "https://github.com/peteragility/superset/issues/1",
+      "handler": "codemod", "risk_tier": "low", "rule_id": "B113", "finding_type": "security",
+      "status": "codemod_done", "acu_used": 0.0, "automerge_decision": "codemod"
+    },
+    {
+      "number": 2, "title": "[security] weak hash md5/sha1 (Bandit B324)",
+      "html_url": "https://github.com/peteragility/superset/issues/2",
+      "handler": "codemod", "risk_tier": "low", "rule_id": "B324", "finding_type": "security",
+      "status": "codemod_done", "acu_used": 0.0, "automerge_decision": "codemod"
+    },
+    {
+      "number": 3, "title": "[security] yaml.load without SafeLoader (Bandit B506)",
+      "html_url": "https://github.com/peteragility/superset/issues/3",
+      "handler": "codemod", "risk_tier": "low", "rule_id": "B506", "finding_type": "security",
+      "status": "codemod_done", "acu_used": 0.0, "automerge_decision": "codemod"
+    },
+    {
+      "number": 5, "title": "[code-quality] replace broad except (E722)",
+      "html_url": "https://github.com/peteragility/superset/issues/5",
+      "handler": "codemod", "risk_tier": "low", "rule_id": "E722", "finding_type": "code-quality",
+      "status": "codemod_done", "acu_used": 0.0, "automerge_decision": "codemod"
+    },
+    {
+      "number": 4, "title": "[dependency] upgrade vulnerable PyJWT and fix breakage",
+      "html_url": "https://github.com/peteragility/superset/issues/4",
+      "handler": "devin", "risk_tier": "high", "rule_id": "", "finding_type": "dependency",
+      "status": "finished",
+      "session_id": "devin-871d87bc51344b6a9b496a50bd7b18b4",
+      "devin_url": "https://app.devin.ai/sessions/871d87bc51344b6a9b496a50bd7b18b4",
+      "pr_url": "https://github.com/peteragility/superset/pull/10",
+      "dispatch_iso": "2026-06-18T08:50:46Z",
+      "pr_iso": "2026-06-18T09:33:21Z",
+      "tests_passing": 1, "confidence": "high",
+      "acu_used": null,
+      "reviewer_session_id": "devin-2750a5f0792545c994d5045a4460c791",
+      "reviewer_url": "https://app.devin.ai/sessions/2750a5f0792545c994d5045a4460c791",
+      "reviewer_verdict": "request_changes",
+      "reviewer_recommendation": "human_review",
+      "reviewer_output": {
+        "verdict": "request_changes",
+        "recommendation": "human_review",
+        "tests_passing": true,
+        "tests_run": true,
+        "security_ok": true,
+        "confidence": "high",
+        "summary": "CVE fix verified (2.13.0 minimal safe version). All 83 relevant tests pass. Found a missed short JWT secret in test_base.py.",
+        "missed_cases": [
+          "tests/unit_tests/db_engine_specs/test_base.py: SECRET_KEY='test-secret-key' (15 bytes) used with HS256 jwt.encode via start_oauth2_dance",
+          "tests/unit_tests/security/test_guest_token_dataset_allowlist.py: GUEST_TOKEN_JWT_SECRET (6 bytes) — mocked, inconsistent",
+          "tests/unit_tests/mcp_service/test_mcp_config.py: MCP_JWT_SECRET (4 bytes) — mocked, inconsistent"
+        ]
+      },
+      "automerge_decision": "held_for_human"
+    }
+  ]
+}

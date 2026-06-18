@@ -58,15 +58,26 @@ class DevinClient:
         title: Optional[str] = None,
         max_acu_limit: int = config.DEVIN_MAX_ACU,
         idempotent: bool = True,
+        knowledge_ids: Optional[list[str]] = None,
+        playbook_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Returns at least: {session_id, url, is_new_session}."""
+        """Create a Devin session. Returns at least {session_id, url, is_new_session}.
+
+        knowledge_ids / playbook_id attach Devin-native org context so every
+        session in the fleet inherits the same conventions unattended."""
+        # Fall back to the org-wide defaults so the whole fleet shares context.
+        if knowledge_ids is None and config.KNOWLEDGE_ID:
+            knowledge_ids = [config.KNOWLEDGE_ID]
+        if playbook_id is None and config.PLAYBOOK_ID:
+            playbook_id = config.PLAYBOOK_ID
+
         if self._sim:
             return self._sim.create_session(prompt, tags=tags, title=title)
 
         body: dict[str, Any] = {
             "prompt": prompt,
             "idempotent": idempotent,
-            "max_acu_limit": max_acu_limit,
+            "max_acu_limit": max_acu_limit,  # enforced per-session cost cap
         }
         if structured_output_schema:
             body["structured_output_schema"] = structured_output_schema
@@ -74,6 +85,10 @@ class DevinClient:
             body["tags"] = tags
         if title:
             body["title"] = title
+        if knowledge_ids:
+            body["knowledge_ids"] = knowledge_ids
+        if playbook_id:
+            body["playbook_id"] = playbook_id
 
         r = self._session.post(f"{self.base_url}/sessions", json=body, timeout=60)
         r.raise_for_status()
@@ -114,13 +129,27 @@ class DevinClient:
             return pr.get("url")
         return None
 
-    @staticmethod
-    def acu_of(session: dict) -> Optional[float]:
-        """Best-effort ACU read; field naming varies, so check a few keys."""
-        for k in ("acu_used", "acus_used", "acu", "compute_units_used"):
-            if session.get(k) is not None:
-                try:
-                    return float(session[k])
-                except (TypeError, ValueError):
-                    pass
-        return None
+    # Note: per-session ACU is intentionally NOT read here — the session API on
+    # this tier does not expose it. Cost is sourced from the Devin consumption
+    # console (see fixtures/real_runs.json) rather than guessed.
+
+    # ── Knowledge (Devin-native org context) ────────────────────────────────────
+    def create_knowledge(self, name: str, body: str, trigger_description: str) -> dict[str, Any]:
+        """Create an org Knowledge entry. Attach its id to sessions so the whole
+        fleet inherits the same conventions without re-prompting."""
+        if self._sim:
+            return {"id": "knowledge-sim-001", "name": name}
+        r = self._session.post(
+            f"{self.base_url}/knowledge",
+            json={"name": name, "body": body, "trigger_description": trigger_description},
+            timeout=60,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def list_knowledge(self) -> dict[str, Any]:
+        if self._sim:
+            return {"knowledge": [], "folders": []}
+        r = self._session.get(f"{self.base_url}/knowledge", timeout=30)
+        r.raise_for_status()
+        return r.json()
